@@ -1,19 +1,104 @@
-// ChessEngine.cpp : Este archivo contiene la función "main". La ejecución del programa comienza y termina ahí.
-//
-
 #include <iostream>
+#include <fstream>
+#include <string>
+#include <memory>
+#include <stdlib.h>
+
+#define CL_HPP_ENABLE_EXCEPTIONS
+#define CL_HPP_ENABLE_PROGRAM_CONSTRUCTION_FROM_ARRAY_COMPATIBILITY
+#define CL_HPP_MINIMUM_OPENCL_VERSION 120
+#define CL_HPP_TARGET_OPENCL_VERSION 120
+#ifdef __APPLE__
+#include <OpenCL/opencl.hpp>
+#else
+#include <CL/opencl.hpp>
+#endif
 
 int main()
 {
-    std::cout << "Hello World!\n";
+	const int N_ELEMENTS = 1024 * 1024;
+	int platform_id = 0, device_id = 0;
+
+	try {
+		std::unique_ptr<int[]> A(new int[N_ELEMENTS]);      // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
+		std::unique_ptr<int[]> B(new int[N_ELEMENTS]);
+		std::unique_ptr<int[]> C(new int[N_ELEMENTS]);
+
+		for (int i = 0; i < N_ELEMENTS; ++i) {
+			A[i] = i;
+			B[i] = i;
+		}
+
+		// Query for platforms
+		std::vector<cl::Platform> platforms;
+		cl::Platform::get(&platforms);
+
+		// Get a list of devices on this platform
+		std::vector<cl::Device> devices;
+		// Select the platform.
+		platforms[platform_id].getDevices(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_CPU, &devices);
+
+		// Create a context
+		cl::Context context(devices);
+
+		// Create a command queue
+		// Select the device.
+		cl::CommandQueue queue = cl::CommandQueue(context, devices[device_id]);
+
+		// Create the memory buffers
+		cl::Buffer bufferA = cl::Buffer(context, CL_MEM_READ_ONLY, N_ELEMENTS * sizeof(int));
+		cl::Buffer bufferB = cl::Buffer(context, CL_MEM_READ_ONLY, N_ELEMENTS * sizeof(int));
+		cl::Buffer bufferC = cl::Buffer(context, CL_MEM_WRITE_ONLY, N_ELEMENTS * sizeof(int));
+
+		// Copy the input data to the input buffers using the command queue.
+		queue.enqueueWriteBuffer(bufferA, CL_FALSE, 0, N_ELEMENTS * sizeof(int), A.get());
+		queue.enqueueWriteBuffer(bufferB, CL_FALSE, 0, N_ELEMENTS * sizeof(int), B.get());
+
+		// Read the program source
+		std::ifstream sourceFile("mykernel.cl");
+		std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
+		cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()));
+
+		// Make program from the source code
+		cl::Program program = cl::Program(context, source);
+
+		// Build the program for the devices
+		program.build(devices);
+
+		// Make kernel
+		cl::Kernel vecadd_kernel(program, "vecadd");
+
+		// Set the kernel arguments
+		vecadd_kernel.setArg(0, bufferA);
+		vecadd_kernel.setArg(1, bufferB);
+		vecadd_kernel.setArg(2, bufferC);
+
+		// Execute the kernel
+		cl::NDRange global(N_ELEMENTS);
+		cl::NDRange local(256);
+		queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
+
+		// Copy the output data back to the host
+		queue.enqueueReadBuffer(bufferC, CL_TRUE, 0, N_ELEMENTS * sizeof(int), C.get());
+
+		// Verify the result
+		bool result = true;
+		for (int i = 0; i < N_ELEMENTS; i++) {
+			if (C[i] != A[i] + B[i]) {
+				result = false;
+				break;
+			}
+		}
+		if (result)
+			std::cout << "Success!\n";
+		else
+			std::cout << "Failed!\n";
+	}
+	catch (cl::Error err) {
+		std::cout << "Error: " << err.what() << "(" << err.err() << ")" << std::endl;
+		return(EXIT_FAILURE);
+	}
+
+	std::cout << "Done.\n";
+	return(EXIT_SUCCESS);
 }
-
-// Ejecutar programa: Ctrl + F5 o menú Depurar > Iniciar sin depurar
-// Depurar programa: F5 o menú Depurar > Iniciar depuración
-
-// Sugerencias para primeros pasos: 1. Use la ventana del Explorador de soluciones para agregar y administrar archivos
-//   2. Use la ventana de Team Explorer para conectar con el control de código fuente
-//   3. Use la ventana de salida para ver la salida de compilación y otros mensajes
-//   4. Use la ventana Lista de errores para ver los errores
-//   5. Vaya a Proyecto > Agregar nuevo elemento para crear nuevos archivos de código, o a Proyecto > Agregar elemento existente para agregar archivos de código existentes al proyecto
-//   6. En el futuro, para volver a abrir este proyecto, vaya a Archivo > Abrir > Proyecto y seleccione el archivo .sln

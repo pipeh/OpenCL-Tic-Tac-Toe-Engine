@@ -14,6 +14,80 @@
 #include <CL/opencl.hpp>
 #endif
 
+int leafCalculationCPU() {
+	return 0;
+}
+
+int branchCalculationCPU() {
+	return 0;
+}
+
+int gameTreeMax(int* P0) {
+	// Setting P0 as the root of the game tree T
+	int* T = P0;
+	int M_best = 0;
+
+	int Lmin = 0;
+	int Bmin = 0;
+	int Lmax = 0;
+	int Bmax = 0;
+	int l = 0;
+	int b = 0;
+
+	int remLeaves; // remaining leaves
+	int remBranches; // remaining branches
+
+	while (T != NULL) {
+		if (remLeaves > Lmin) {
+			int leaves [l]; // Get l leaves from tree T
+			
+			// Call leafCalculationFunction on GPU with leaves
+			
+			// Get evaluatedValueList from GPU
+
+			float evaluatedValueList [l];
+
+			for (float v : evaluatedValueList) {
+				// Update parent node in T
+				int* parentNode;
+
+				// If parent node is root, set M_best to value
+				if (parentNode == P0) {
+					M_best = v;
+				}
+				// Pruning
+			}
+		}
+		else if (remLeaves > 0) {
+			int leaf = 0; // Get one leaf node from tree T
+			
+			// Call leafCalculationFunction on CPU
+			// Update the tree T by the evaluated leaf node
+			int v = 0; // int v = leafCalculationFunction(leaf);
+			int* parentNode;
+			if (parentNode == P0) {
+					M_best = v;
+				}
+			// Pruning
+		}
+		else if (remBranches > Bmin) {
+			int branches [b];  // Get b branches from tree T
+			// Call branchCalculationFunction in GPU
+			// Get childNodeList from the GPU
+			int childNodeList [5];  // Could be any size
+			for (int c : childNodeList) {
+				// Update T by generated child node c
+			}
+		}
+		else if (remBranches > 0) {
+			int leaf = 0; // Get one leaf node from tree T
+			// Call branchCalculationFunction on CPU
+			// Update T by new child nodes from node
+		}
+	}
+	return M_best;
+}
+
 int main()
 {
 	const int N_ELEMENTS = 1024 * 1024;

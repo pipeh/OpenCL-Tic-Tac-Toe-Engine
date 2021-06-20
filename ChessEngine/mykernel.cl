@@ -19,8 +19,17 @@ game rules;
 
 */
 
-kernel leafCalculation(global int* Pl) {
+kernel leafCalculation(global int** Pl) {
     const int idx = get_global_id(0);
+    int* board = Pl[idx]; //2
+    int accum = 0;
+    for(int i = 0; i < 64; i++) {
+        // Recorrer el tablero y asignar puntajes
+        int score;
+        accum += score; 
+    }
+    // 8
+    // return V;
     
 }
 
@@ -40,9 +49,44 @@ game rules;
 9: return Ml;
 */
 
-kernel branchCalculation(global int* Pl) {
-    const int idx = get_global_id(0); \\ 1
-    \\2
-    for()
-    
+// Pl es un array con todos los tableros extendidos [[0..63],[64..127]]
+kernel branchCalculation(global int** Pl, global int** Ml) {
+    const int idx = get_global_id(0); // 1
+    int* board = Pl[idx]; //2
+    int** Bl; // [[0..63],[64..127]]
+    int accum = 0;
+
+    for(int i = 0; i < 64; i++) {
+        // Eva= board[i];luar si board[i] puede moverse
+        // Calcular nuevos tableros para cada pieza (es necesario saber cómo se mueve cada pieza)
+        // Quedarse con los mejores tableros
+        int p = board[i];
+        Bl[p] = getMoves(p); // Hay que definir esto
+        //int score;
+        //accum += score; 
+    }
+}
+
+int** getMoves(int* b, char p, int pos) {
+    int** boards;
+    if (p == 'p') {
+        if (pos + 8 <= 64) {
+            int* b1 = copy(board);
+            b1[pos] = 0;
+            b1[pos + 8] = 1;
+            boards[0] = b1;
+        }
+    } else if (p == 'r') {
+
+    } else if (p == 'n') {
+
+    } else if (p == 'b') {
+
+    } else if (p == 'q') {
+
+    } else if (p == 'k') {
+
+    }
+
+    return boards;
 }

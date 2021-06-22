@@ -3,6 +3,18 @@ kernel void vecadd( global int* A, global int* B, global int* C ) {
     C[idx] = A[idx] + B[idx];
 }
 
+// [0 1 2 
+//  3 4 5 
+//  6 7 8]
+// [- X O 
+//  - O X 
+//  - - -]
+
+// [0 1 2 
+//  0 2 1 
+//  0 0 0]
+// [[0 1 2], [3 4 5], [6 7 8], [0 3 6], [1 4 7], [2 5 8], [0 4 8], [2 4 6]]
+
 /*
 Leaf:
 Input: Pl : "a list of game positions"
@@ -19,18 +31,31 @@ game rules;
 
 */
 
-kernel leafCalculation(global int** Pl) {
+__constant int lines[8][3] = {
+        {0, 1, 2},
+        {3, 4, 5}, 
+        {6, 7, 8}, 
+        {0, 3, 6}, 
+        {1, 4, 7}, 
+        {2, 5, 8}, 
+        {0, 4, 8}, 
+        {2, 4, 6}
+        };
+
+__constant int scores[4] = {0, 1, 10, 100};
+
+kernel leafCalculation(global int Pl[][], global int V[], global int pindex, global int eindex) {
     const int idx = get_global_id(0);
-    int* board = Pl[idx]; //2
+    int board[] = Pl[idx];
     int accum = 0;
-    for(int i = 0; i < 64; i++) {
+
+    for(int l[] : lines) {
         // Recorrer el tablero y asignar puntajes
-        int score;
+        int score = scores[(board[l[0]] == pindex) + (board[l[1]] == pindex) + (board[l[2]] == pindex)];
+        score -= scores[(board[l[0]] == eindex) + (board[l[1]] == eindex) + (board[l[2]] == eindex)];
         accum += score; 
     }
-    // 8
-    // return V;
-    
+    V[idx] = accum;
 }
 
 /*
@@ -49,44 +74,18 @@ game rules;
 9: return Ml;
 */
 
-// Pl es un array con todos los tableros extendidos [[0..63],[64..127]]
-kernel branchCalculation(global int** Pl, global int** Ml) {
+kernel branchCalculation(global int Pl[][], global int Ml[][][], global int pindex, global int eindex) {
     const int idx = get_global_id(0); // 1
-    int* board = Pl[idx]; //2
-    int** Bl; // [[0..63],[64..127]]
-    int accum = 0;
+    int board[] = Pl[idx]; //2
+    int generatedMoves[][];
 
-    for(int i = 0; i < 64; i++) {
-        // Eva= board[i];luar si board[i] puede moverse
-        // Calcular nuevos tableros para cada pieza (es necesario saber cómo se mueve cada pieza)
-        // Quedarse con los mejores tableros
-        int p = board[i];
-        Bl[p] = getMoves(p); // Hay que definir esto
-        //int score;
-        //accum += score; 
-    }
-}
-
-int** getMoves(int* b, char p, int pos) {
-    int** boards;
-    if (p == 'p') {
-        if (pos + 8 <= 64) {
-            int* b1 = copy(board);
-            b1[pos] = 0;
-            b1[pos + 8] = 1;
-            boards[0] = b1;
+    for (int i = 0; i < 9; i++) {
+        if (board[i] == 0) {
+            int new_move[9];
+            std::copy(board, board + 9, new_move);
+            new_move[i] = pindex;
+            std::copy(new_move, new_move + 9, generatedMoves[i]);
         }
-    } else if (p == 'r') {
-
-    } else if (p == 'n') {
-
-    } else if (p == 'b') {
-
-    } else if (p == 'q') {
-
-    } else if (p == 'k') {
-
     }
-
-    return boards;
+    Ml[idx] = generatedMoves;
 }

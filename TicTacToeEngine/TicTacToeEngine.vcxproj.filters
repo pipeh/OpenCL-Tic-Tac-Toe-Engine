@@ -18,5 +18,18 @@
     <ClCompile Include="TicTacToeEngine.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
+    <ClCompile Include="TreeNode.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="TreeNode.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="mykernel.cl">
+      <Filter>Archivos de origen</Filter>
+    </None>
   </ItemGroup>
 </Project>

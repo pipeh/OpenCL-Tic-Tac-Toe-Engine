@@ -15,42 +15,152 @@
 #include <CL/opencl.hpp>
 #endif
 
-int leafCalculationCPU() {
-	return 0;
+const int lines[8][3] = {
+	{0, 1, 2},
+  {3, 4, 5}, 
+  {6, 7, 8}, 
+  {0, 3, 6}, 
+  {1, 4, 7}, 
+  {2, 5, 8}, 
+  {0, 4, 8}, 
+  {2, 4, 6}
+};
+
+const int scores[4] = {0, 1, 10, 100};
+
+int* leafCalculationCPU(int Pl[][], int pindex, int eindex) {
+	int length = sizeof(Pl) / sizeof(int);
+	int V[length];
+
+	for (int i = 0; i < length; i++) {
+		int board[] = Pl[i];
+    int accum = 0;
+
+    for(int l[] : lines) {
+      // Recorrer el tablero y asignar puntajes
+      int score = scores[(board[l[0]] == pindex) + (board[l[1]] == pindex) + (board[l[2]] == pindex)];
+      score -= scores[(board[l[0]] == eindex) + (board[l[1]] == eindex) + (board[l[2]] == eindex)];
+      accum += score; 
+    }
+    V[i] = accum;
+	}
+
+	return V;
 }
 
-int branchCalculationCPU() {
-	return 0;
+int* branchCalculationCPU(int Pl[][], int pindex, int eindex) {
+	int length = sizeof(Pl) / sizeof(int);
+	int Ml[length][][];
+
+	for (int i = 0; i < length; i++) {
+		int board[] = Pl[i]; //2
+    int generatedMoves[][];
+
+    for (int j = 0; j < 9; j++) {
+      if (board[j] == 0) {
+        int new_move[9];
+        std::copy(board, board + 9, new_move);
+        new_move[j] = pindex;
+        std::copy(new_move, new_move + 9, generatedMoves[j]);
+      }
+    }
+    Ml[i] = generatedMoves;
+	}
 }
 
-
-int gameTreeMax(TreeNode P0) {
+// Algoritmo 2
+int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 
 	// Setting P0 as the root of the game tree T
 	TreeNode T = P0;
-	int* M_best = 0;
+	int M_best[9];
 
-	int Lmin = 0;
-	int Bmin = 0;
-	int Lmax = 0;
-	int Bmax = 0;
+	int Lmin = 3;
+	int Bmin = 3;
+	int Lmax = 6;
+	int Bmax = 6;
 	int l = 0;
 	int b = 0;
 
-	int remLeaves; // remaining leaves
-	int remBranches; // remaining branches
+	int remLeaves = 0; // remaining leaves
+	int remBranches = 1; // remaining branches
 
 	while (T != NULL) {
 		if (remLeaves > Lmin) {
-			int** leaves = T.children.at(l); // Get l leaves from tree T
+			int** leaves = T.child; // Get l leaves from tree T
+			int plSize = sizeof(leaves) / sizeof(TreeNode);
 			
 			// Call leafCalculationFunction on GPU with leaves
-			
-			// Get evaluatedValueList from GPU
+			const int N_ELEMENTS = 1024 * 1024;
+			int platform_id = 0, device_id = 0;
 
-			float evaluatedValueList [l];
+			try {
+				std::unique_ptr<int[][]> Pl(new int[plSize][9]);      // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
+				std::unique_ptr<int[]> V(new int[plSize]);
 
-			for (float v : evaluatedValueList) {
+				for (int i = 0; i < plSize; ++i) {
+					Pl[i] = T.child[i].board;
+				}
+
+				// Query for platforms
+				std::vector<cl::Platform> platforms;
+				cl::Platform::get(&platforms);
+
+				// Get a list of devices on this platform
+				std::vector<cl::Device> devices;
+
+				// Select the platform.
+				platforms[platform_id].getDevices(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_CPU, &devices);
+
+				// Create a context
+				cl::Context context(devices);
+
+				// Create a command queue
+				// Select the device.
+				cl::CommandQueue queue = cl::CommandQueue(context, devices[device_id]);
+
+				// Create the memory buffers
+				cl::Buffer bufferPl = cl::Buffer(context, CL_MEM_READ_ONLY, plSize * sizeof(int));
+				cl::Buffer bufferPIndex = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(int));
+				cl::Buffer bufferEIndex = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(int));
+				cl::Buffer bufferV = cl::Buffer(context, CL_MEM_WRITE_ONLY, plSize * sizeof(int));
+
+				// Copy the input data to the input buffers using the command queue.
+				queue.enqueueWriteBuffer(bufferPl, CL_FALSE, 0, plSize * sizeof(int), Pl.get());
+				queue.enqueueWriteBuffer(bufferPIndex, CL_FALSE, 0, sizeof(int), pindex);
+				queue.enqueueWriteBuffer(bufferEIndex, CL_FALSE, 0, sizeof(int), eindex);
+
+				// Read the program source
+				std::ifstream sourceFile("mykernel.cl");
+				std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
+				cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()));
+
+				// Make program from the source code
+				cl::Program program = cl::Program(context, source);
+
+				// Build the program for the devices
+				program.build(devices);
+
+				// Make kernel
+				cl::Kernel vecadd_kernel(program, "leafCalculation");
+
+				// Set the kernel arguments
+				vecadd_kernel.setArg(0, bufferPl);
+				vecadd_kernel.setArg(1, bufferV);
+				vecadd_kernel.setArg(2, bufferPIndex);
+				vecadd_kernel.setArg(3, bufferEIndex);
+
+				// Execute the kernel
+				cl::NDRange global(plSize);
+				cl::NDRange local(256);
+				queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
+
+				// Copy the output data back to the host
+				queue.enqueueReadBuffer(bufferV, CL_TRUE, 0, plSize * sizeof(int), V.get());
+
+			// Get evaluatedValueList from GPU: V
+
+			for (int v : V) {
 				// Update parent node in T
 				TreeNode parentNode;
 

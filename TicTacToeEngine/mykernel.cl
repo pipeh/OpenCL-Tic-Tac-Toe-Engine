@@ -75,17 +75,17 @@ game rules;
 */
 
 kernel branchCalculation(global int Pl[][], global int Ml[][][], global int pindex, global int eindex) {
-    const int idx = get_global_id(0); // 1
-    int board[] = Pl[idx]; //2
-    int generatedMoves[][];
+  const int idx = get_global_id(0); // 1
+  int board[] = Pl[idx]; //2
+  int generatedMoves[][];
 
-    for (int i = 0; i < 9; i++) {
-        if (board[i] == 0) {
-            int new_move[9];
-            std::copy(board, board + 9, new_move);
-            new_move[i] = pindex;
-            std::copy(new_move, new_move + 9, generatedMoves[i]);
-        }
+  for (int i = 0; i < 9; i++) {
+    if (board[i] == 0) {
+      int new_move[9];
+      std::copy(board, board + 9, new_move);
+      new_move[i] = pindex;
+      std::copy(new_move, new_move + 9, generatedMoves[i]);
     }
-    Ml[idx] = generatedMoves;
+  }
+  Ml[idx] = generatedMoves;
 }

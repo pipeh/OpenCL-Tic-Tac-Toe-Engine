@@ -6,8 +6,8 @@
 
 TreeNode::TreeNode() {};
 
-TreeNode::TreeNode(int* Board) :
-    board(Board);
+TreeNode::TreeNode(int* board) :
+    board(board);
     parent(NULL)
 {}
 

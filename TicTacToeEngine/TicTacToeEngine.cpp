@@ -28,6 +28,14 @@ const int lines[8][3] = {
 
 const int scores[4] = {0, 1, 10, 100};
 
+const int MAX = 1000;
+const int MIN = -1000;
+
+// Algo similar al algoritmo 1
+int alphaBetaPrunning(int depth, int nodeIndex, bool maximizingPlayer, int values[], int alpha, int beta) {
+
+}
+
 int* leafCalculationCPU(int Pl[][], int pindex, int eindex) {
 	int length = sizeof(Pl) / sizeof(int);
 	int V[length];
@@ -85,6 +93,8 @@ int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 	int remLeaves = 0; // remaining leaves
 	int remBranches = 1; // remaining branches
 
+	bool maximizingPlayer = true; // O puede depender de la altura a la que se haga el cálculo.
+
 	while (T != NULL) {
 		if (remLeaves > Lmin) {
 			int** leaves = T.child; // Get l leaves from tree T
@@ -95,7 +105,7 @@ int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 			int platform_id = 0, device_id = 0;
 
 			try {
-				std::unique_ptr<int[][]> Pl(new int[plSize][9]);      // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
+				std::unique_ptr<int[][]> Pl(new int[plSize][9]);   // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
 				std::unique_ptr<int[]> V(new int[plSize]);
 
 				for (int i = 0; i < plSize; ++i) {
@@ -159,10 +169,18 @@ int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 				queue.enqueueReadBuffer(bufferV, CL_TRUE, 0, plSize * sizeof(int), V.get());
 
 			// Get evaluatedValueList from GPU: V
-
+			// Ya tenemos los values aqui
 			for (int v : V) {
 				// Update parent node in T
-				TreeNode parentNode;
+				TreeNode parentNode; // Minimax de alguna forma
+
+				if (v >= beta) {
+					M_best = v;
+				} 
+				if (v >= alpha) {
+					// Actualizar el best move
+					alpha = v;
+				}
 
 				// If parent node is root, set M_best to value
 				if (parentNode == P0) {
@@ -184,8 +202,9 @@ int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 			// Pruning
 		}
 		else if (remBranches > Bmin) {
-			int** branches [b];  // Get b branches from tree T
+			TreeNode* branches = T.getBranches(b);  // Get b branches from tree T
 			// Call branchCalculationFunction in GPU
+
 			// Get childNodeList from the GPU
 			int** childNodeList [5];  // Could be any size
 			for (int* c : childNodeList) {
@@ -193,9 +212,13 @@ int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 			}
 		}
 		else if (remBranches > 0) {
-			int* leaf = 0; // Get one leaf node from tree T
+			TreeNode branch = T.getBranch(); // Get one leaf node from tree T
 			// Call branchCalculationFunction on CPU
+			int* newNodes = branchCalculationCPU(branch.getBoard(), 0, 1);
 			// Update T by new child nodes from node
+			for (int* n : newNodes) {
+				branch.appendChild(new TreeNode(n));
+			}
 		}
 	}
 	return M_best;

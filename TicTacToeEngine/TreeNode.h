@@ -13,6 +13,8 @@ private:
 
     std::vector<TreeNode*> children;
 
+    bool isLeaf;
+
     int countNodesRec(TreeNode* root, int& count);
 
 public:
@@ -22,6 +24,9 @@ public:
     void appendChild(TreeNode* child);
     void setParent(TreeNode* parent);
 
+    void setIsLeaf(bool leaf);
+    bool getIsLeaf();
+
     void popBackChild();
     void removeChild(int pos);
 
@@ -30,6 +35,9 @@ public:
 
     TreeNode* getParent();
     TreeNode* getChild(int pos);
+
+    TreeNode* getBranches(int n);
+    TreeNode* getLeaves(int n);
 
     int childrenNumber();
     int grandChildrenNum();

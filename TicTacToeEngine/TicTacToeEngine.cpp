@@ -31,11 +31,7 @@ const int scores[4] = {0, 1, 10, 100};
 const int MAX = 1000;
 const int MIN = -1000;
 
-// Algo similar al algoritmo 1
-int alphaBetaPrunning(int depth, int nodeIndex, bool maximizingPlayer, int values[], int alpha, int beta) {
-
-}
-
+/*
 int* leafCalculationCPU(int Pl[][], int pindex, int eindex) {
 	int length = sizeof(Pl) / sizeof(int);
 	int V[length];
@@ -76,12 +72,96 @@ int* branchCalculationCPU(int Pl[][], int pindex, int eindex) {
 	}
 }
 
+*/
+std::vector<int*> leafCalculationGPUCall(std::vector<TreeNode*> leaves) {
+	// Call leafCalculationFunction on GPU with leaves
+	int plSize = leaves.size();
+
+	const int N_ELEMENTS = 1024 * 1024;
+	int platform_id = 0, device_id = 0;
+
+	std::vector<int*> Pl;  // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
+	std::vector<int*> V;
+	int pindex = 1;
+	int eindex = 0;
+
+	for (int i = 0; i < plSize; ++i) {
+		Pl.push_back(leaves[i]->getBoard());
+	}
+
+	// Query for platforms
+	std::vector<cl::Platform> platforms;
+	cl::Platform::get(&platforms);
+
+	// Get a list of devices on this platform
+	std::vector<cl::Device> devices;
+
+	// Select the platform.
+	platforms[platform_id].getDevices(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_CPU, &devices);
+	
+	// Create a context
+	cl::Context context(devices);
+
+	// Create a command queue
+	// Select the device.
+	cl::CommandQueue queue = cl::CommandQueue(context, devices[device_id]);
+
+	// Create the memory buffers
+	cl::Buffer bufferPl = cl::Buffer(context, CL_MEM_READ_ONLY, plSize * sizeof(int) * 9);
+	cl::Buffer bufferPIndex = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(int));
+	cl::Buffer bufferEIndex = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(int));
+	cl::Buffer bufferV = cl::Buffer(context, CL_MEM_WRITE_ONLY, plSize * sizeof(int));
+
+	// Copy the input data to the input buffers using the command queue.
+	queue.enqueueWriteBuffer(bufferPl, CL_FALSE, 0, plSize * sizeof(int) * 9, &Pl[0]);
+	queue.enqueueWriteBuffer(bufferPIndex, CL_FALSE, 0, sizeof(int), &pindex);
+	queue.enqueueWriteBuffer(bufferEIndex, CL_FALSE, 0, sizeof(int), &eindex);
+	std::cout << plSize;
+
+	// Read the program source
+	std::ifstream sourceFile("mykernel.cl");
+	std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
+	cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()));
+
+	// Make program from the source code
+	cl::Program program = cl::Program(context, source);
+
+	// Build the program for the devices
+	program.build(devices);
+	std::cout << "tast";
+	// Make kernel
+	cl::Kernel lckernel(program, "leafCalculation");
+	std::cout << "test";
+
+	// Set the kernel arguments
+	lckernel.setArg(0, bufferPl);
+	lckernel.setArg(1, bufferV);
+	lckernel.setArg(2, bufferPIndex);
+	lckernel.setArg(3, bufferEIndex);
+
+	// Execute the kernel
+	cl::NDRange global(plSize);
+	cl::NDRange local(256);
+	queue.enqueueNDRangeKernel(lckernel, cl::NullRange, global, local);
+
+	// Copy the output data back to the host
+	queue.enqueueReadBuffer(bufferV, CL_TRUE, 0, plSize * sizeof(int), &V[0]);
+	std::cout << "tost";
+	return V;
+}
+
+/*
 // Algoritmo 2
 int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 
+	// Alpha-Beta Pruning
+	alpha = MIN;
+	beta = MAX;
+	depth = 0;  // O que cada nodo guarde su altura.
+	int M_best[9];
+
 	// Setting P0 as the root of the game tree T
 	TreeNode T = P0;
-	int M_best[9];
 
 	int Lmin = 3;
 	int Bmin = 3;
@@ -93,122 +173,99 @@ int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 	int remLeaves = 0; // remaining leaves
 	int remBranches = 1; // remaining branches
 
-	bool maximizingPlayer = true; // O puede depender de la altura a la que se haga el cálculo.
+	bool maximizingPlayer = true;  // O puede depender de la altura a la que se haga el cálculo. depth % 2 == 0 -> Max || == 1 -> Min
 
 	while (T != NULL) {
 		if (remLeaves > Lmin) {
-			int** leaves = T.child; // Get l leaves from tree T
-			int plSize = sizeof(leaves) / sizeof(TreeNode);
+			TreeNode* leaves = T.getChilds(); // Get l leaves from tree T
 			
 			// Call leafCalculationFunction on GPU with leaves
-			const int N_ELEMENTS = 1024 * 1024;
-			int platform_id = 0, device_id = 0;
+			std::unique_ptr<int[]> V = leafCalculationGPUCall(leaves); // Get evaluatedValueList from GPU: V
 
-			try {
-				std::unique_ptr<int[][]> Pl(new int[plSize][9]);   // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
-				std::unique_ptr<int[]> V(new int[plSize]);
+			// Quizás aquí debería haber un for por cada hoja analizada
+			for (int i = 0; i < V.length(); i++) {
+				// Get value, parentNode, and depth
+				int v = V[i];
+				TreeNode parentNode = leaves[i].getParent();
+				int depth = parentNode.getDepth();
 
-				for (int i = 0; i < plSize; ++i) {
-					Pl[i] = T.child[i].board;
+				if (depth % 2 == 0) {
+					// Maximizing player
+					int best = max(best, v);
+					alpha = max(alpha, best);
+
+					// Alpha Beta Pruning
+					if (beta <= alpha) {
+						break;
+					}
+				} else {
+					// Minimizing player
+					int best = min(best, v);
+					beta = min(beta, best);
+
+					// Alpha Beta Pruning
+					if (beta <= alpha) {
+						break;
+					}
 				}
 
-				// Query for platforms
-				std::vector<cl::Platform> platforms;
-				cl::Platform::get(&platforms);
-
-				// Get a list of devices on this platform
-				std::vector<cl::Device> devices;
-
-				// Select the platform.
-				platforms[platform_id].getDevices(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_CPU, &devices);
-
-				// Create a context
-				cl::Context context(devices);
-
-				// Create a command queue
-				// Select the device.
-				cl::CommandQueue queue = cl::CommandQueue(context, devices[device_id]);
-
-				// Create the memory buffers
-				cl::Buffer bufferPl = cl::Buffer(context, CL_MEM_READ_ONLY, plSize * sizeof(int));
-				cl::Buffer bufferPIndex = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(int));
-				cl::Buffer bufferEIndex = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(int));
-				cl::Buffer bufferV = cl::Buffer(context, CL_MEM_WRITE_ONLY, plSize * sizeof(int));
-
-				// Copy the input data to the input buffers using the command queue.
-				queue.enqueueWriteBuffer(bufferPl, CL_FALSE, 0, plSize * sizeof(int), Pl.get());
-				queue.enqueueWriteBuffer(bufferPIndex, CL_FALSE, 0, sizeof(int), pindex);
-				queue.enqueueWriteBuffer(bufferEIndex, CL_FALSE, 0, sizeof(int), eindex);
-
-				// Read the program source
-				std::ifstream sourceFile("mykernel.cl");
-				std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
-				cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()));
-
-				// Make program from the source code
-				cl::Program program = cl::Program(context, source);
-
-				// Build the program for the devices
-				program.build(devices);
-
-				// Make kernel
-				cl::Kernel vecadd_kernel(program, "leafCalculation");
-
-				// Set the kernel arguments
-				vecadd_kernel.setArg(0, bufferPl);
-				vecadd_kernel.setArg(1, bufferV);
-				vecadd_kernel.setArg(2, bufferPIndex);
-				vecadd_kernel.setArg(3, bufferEIndex);
-
-				// Execute the kernel
-				cl::NDRange global(plSize);
-				cl::NDRange local(256);
-				queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
-
-				// Copy the output data back to the host
-				queue.enqueueReadBuffer(bufferV, CL_TRUE, 0, plSize * sizeof(int), V.get());
-
-			// Get evaluatedValueList from GPU: V
-			// Ya tenemos los values aqui
-			for (int v : V) {
-				// Update parent node in T
-				TreeNode parentNode; // Minimax de alguna forma
-
-				if (v >= beta) {
-					M_best = v;
-				} 
-				if (v >= alpha) {
-					// Actualizar el best move
-					alpha = v;
-				}
-
-				// If parent node is root, set M_best to value
+				// If parent node is NULL, set M_best to movement
 				if (parentNode == P0) {
-					M_best = v;
+					best = v;
 				}
 				// Pruning
+				parentNode.removeChild(i);
 			}
 		}
+
 		else if (remLeaves > 0) {
-			int* leaf = 0; // Get one leaf node from tree T
+			TreeNode leaf = T.getChild(0); // Get one leaf node from tree T
 			
 			// Call leafCalculationFunction on CPU
+			int v = leafCalculationFunction(leaf);
 			// Update the tree T by the evaluated leaf node
-			int v = 0; // int v = leafCalculationFunction(leaf);
-			TreeNode parentNode;
-			if (parentNode == P0) {
-					M_best = v;
+			TreeNode parentNode = T;
+			int depth = parentNode.getDepth();
+
+			if (depth % 2 == 0) {
+				// Maximizing player
+				int best = max(best, v);
+				alpha = max(alpha, best);
+
+				// Alpha Beta Pruning
+				if (beta <= alpha) {
+					break;
 				}
+			} else {
+				// Minimizing player
+				int best = min(best, v);
+				beta = min(beta, best);
+
+				// Alpha Beta Pruning
+				if (beta <= alpha) {
+					break;
+				}
+			}
+
+			if (parentNode == P0) {
+				best = v;
+			}
 			// Pruning
+			parentNode.removeChild(0);
 		}
+
 		else if (remBranches > Bmin) {
 			TreeNode* branches = T.getBranches(b);  // Get b branches from tree T
 			// Call branchCalculationFunction in GPU
 
 			// Get childNodeList from the GPU
-			int** childNodeList [5];  // Could be any size
-			for (int* c : childNodeList) {
-				// Update T by generated child node c
+			int*** childNodeList;  // Could be any size
+
+			for (int i = 0; i < childNodeList.length(); i++) {
+				for (int* c : childNodeList[i]) { // Cada c es una board
+					// Update T by generated child node c
+					branches[i].appendChild(new TreeNode(c));
+				}
 			}
 		}
 		else if (remBranches > 0) {
@@ -223,92 +280,15 @@ int gameTreeMax(TreeNode P0, int pindex, int eindex) {
 	}
 	return M_best;
 }
+*/
 
-int main()
-{
-	const int N_ELEMENTS = 1024 * 1024;
-	int platform_id = 0, device_id = 0;
+int main() {
+	int board[9] = {0, 1, 2, 0, 2, 1, 0, 0, 0};
+	TreeNode* test = new TreeNode(board);
+	std::vector<TreeNode*> v;
+	v.push_back(test);
+	std::vector<int*> x = leafCalculationGPUCall(v);
 
-	try {
-		std::unique_ptr<int[]> A(new int[N_ELEMENTS]);      // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
-		std::unique_ptr<int[]> B(new int[N_ELEMENTS]);
-		std::unique_ptr<int[]> C(new int[N_ELEMENTS]);
-
-		for (int i = 0; i < N_ELEMENTS; ++i) {
-			A[i] = i;
-			B[i] = i;
-		}
-
-		// Query for platforms
-		std::vector<cl::Platform> platforms;
-		cl::Platform::get(&platforms);
-
-		// Get a list of devices on this platform
-		std::vector<cl::Device> devices;
-		// Select the platform.
-		platforms[platform_id].getDevices(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_CPU, &devices);
-
-		// Create a context
-		cl::Context context(devices);
-
-		// Create a command queue
-		// Select the device.
-		cl::CommandQueue queue = cl::CommandQueue(context, devices[device_id]);
-
-		// Create the memory buffers
-		cl::Buffer bufferA = cl::Buffer(context, CL_MEM_READ_ONLY, N_ELEMENTS * sizeof(int));
-		cl::Buffer bufferB = cl::Buffer(context, CL_MEM_READ_ONLY, N_ELEMENTS * sizeof(int));
-		cl::Buffer bufferC = cl::Buffer(context, CL_MEM_WRITE_ONLY, N_ELEMENTS * sizeof(int));
-
-		// Copy the input data to the input buffers using the command queue.
-		queue.enqueueWriteBuffer(bufferA, CL_FALSE, 0, N_ELEMENTS * sizeof(int), A.get());
-		queue.enqueueWriteBuffer(bufferB, CL_FALSE, 0, N_ELEMENTS * sizeof(int), B.get());
-
-		// Read the program source
-		std::ifstream sourceFile("mykernel.cl");
-		std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
-		cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()));
-
-		// Make program from the source code
-		cl::Program program = cl::Program(context, source);
-
-		// Build the program for the devices
-		program.build(devices);
-
-		// Make kernel
-		cl::Kernel vecadd_kernel(program, "vecadd");
-
-		// Set the kernel arguments
-		vecadd_kernel.setArg(0, bufferA);
-		vecadd_kernel.setArg(1, bufferB);
-		vecadd_kernel.setArg(2, bufferC);
-
-		// Execute the kernel
-		cl::NDRange global(N_ELEMENTS);
-		cl::NDRange local(256);
-		queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
-
-		// Copy the output data back to the host
-		queue.enqueueReadBuffer(bufferC, CL_TRUE, 0, N_ELEMENTS * sizeof(int), C.get());
-
-		// Verify the result
-		bool result = true;
-		for (int i = 0; i < N_ELEMENTS; i++) {
-			if (C[i] != A[i] + B[i]) {
-				result = false;
-				break;
-			}
-		}
-		if (result)
-			std::cout << "Success!\n";
-		else
-			std::cout << "Failed!\n";
-	}
-	catch (cl::Error err) {
-		std::cout << "Error: " << err.what() << "(" << err.err() << ")" << std::endl;
-		return(EXIT_FAILURE);
-	}
-
-	std::cout << "Done.\n";
-	return(EXIT_SUCCESS);
+	std::cout << "test";
+	return 0;
 }

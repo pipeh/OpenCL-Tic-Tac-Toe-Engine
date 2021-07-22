@@ -7,7 +7,7 @@
 
 class TreeNode{
 private:
-    int board [64];
+    int* board;
 
     TreeNode* parent;
 
@@ -35,6 +35,7 @@ public:
 
     TreeNode* getParent();
     TreeNode* getChild(int pos);
+    std::vector<TreeNode*> getChilds();
 
     TreeNode* getBranches(int n);
     TreeNode* getLeaves(int n);

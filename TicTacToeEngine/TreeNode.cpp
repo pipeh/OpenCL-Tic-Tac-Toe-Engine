@@ -6,10 +6,10 @@
 
 TreeNode::TreeNode() {};
 
-TreeNode::TreeNode(int* board) {
-    board(board);
-    parent(NULL);
-    isLeaf(false);
+TreeNode::TreeNode(int* b) {
+    board = b;
+    parent = NULL;
+    isLeaf = false;
 }
 
 int TreeNode::countNodesRec(TreeNode* root, int& count){
@@ -36,7 +36,7 @@ TreeNode* TreeNode::getBranches(int n) {
     int counter = 0;
 
     for (int i = 0; i < num; i++) {
-        TreeNode child = this->getChild(i);
+        TreeNode child = *(this->getChild(i));
         if (child.getIsLeaf()) {
             branches[counter] = child; 
             counter++;
@@ -54,7 +54,7 @@ TreeNode* TreeNode::getLeaves(int n) {
     int counter = 0;
 
     for (int i = 0; i < num; i++) {
-        TreeNode child = this->getChild(i);
+        TreeNode child = *(this->getChild(i));
         if (!child.getIsLeaf()) {
             branches[counter] = child; 
             counter++;
@@ -119,6 +119,10 @@ TreeNode* TreeNode::getChild(int pos){
         return NULL;
     else
         return children[pos];
+}
+
+std::vector<TreeNode*> TreeNode::getChilds() {
+    return children;
 }
 
 int TreeNode::childrenNumber(){

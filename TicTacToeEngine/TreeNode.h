@@ -7,6 +7,8 @@
 
 class TreeNode{
 private:
+    int value;
+
     int* board;
 
     TreeNode* parent;
@@ -27,6 +29,9 @@ public:
     void setIsLeaf(bool leaf);
     bool getIsLeaf();
 
+    //void setIsBranch(bool leaf);
+    //bool getIsBranch();
+
     void popBackChild();
     void removeChild(int pos);
 
@@ -37,13 +42,15 @@ public:
     TreeNode* getChild(int pos);
     std::vector<TreeNode*> getChilds();
 
-    TreeNode* getBranches(int n);
+    std::vector<TreeNode*> getBranches(int n);
     TreeNode* getLeaves(int n);
 
     int childrenNumber();
     int grandChildrenNum();
 
     int* getBoard();
+    int getValue();
+    void setValue(int v);
 };
 
 #endif

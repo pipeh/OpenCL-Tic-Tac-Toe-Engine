@@ -15,25 +15,29 @@ private:
 
     std::vector<TreeNode*> children;
 
+    bool isMax;
+
     bool isLeaf;
+
+    bool isBranch;
 
     int countNodesRec(TreeNode* root, int& count);
 
 public:
     TreeNode();
-    TreeNode(int *board);
+    TreeNode(int* board, bool indicator, bool max);
 
     void appendChild(TreeNode* child);
     void setParent(TreeNode* parent);
 
-    void setIsLeaf(bool leaf);
+    void setIsLeaf(bool l);
     bool getIsLeaf();
 
-    //void setIsBranch(bool leaf);
-    //bool getIsBranch();
+    void setIsBranch(bool b);
+    bool getIsBranch();
 
     void popBackChild();
-    void removeChild(int pos);
+    void removeChild(TreeNode* child);
 
     bool hasChildren();
     bool hasParent();
@@ -42,15 +46,20 @@ public:
     TreeNode* getChild(int pos);
     std::vector<TreeNode*> getChilds();
 
-    std::vector<TreeNode*> getBranches(int n);
-    TreeNode* getLeaves(int n);
+    std::vector<TreeNode*> getBranches(int n, int d);
+    std::vector<TreeNode*> getLeaves(int n, int d);
 
     int childrenNumber();
     int grandChildrenNum();
 
     int* getBoard();
+
     int getValue();
     void setValue(int v);
+
+    bool getIsMax();
+
+    void getNodesAtDepth(int d, int c, std::vector<TreeNode*> &selectedNodes);
 };
 
 #endif

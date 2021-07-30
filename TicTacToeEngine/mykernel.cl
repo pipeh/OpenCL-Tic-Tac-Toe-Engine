@@ -33,28 +33,43 @@ kernel void leafCalculation(global int* Pl, global int* V, global int *pindex, g
     V[idx] = accum;
 }
 
-kernel void branchCalculation(global int* Pl, global int* Ml, global int *pindex, global int *moves) {
-  const int idx = get_global_id(0);
-  const int k = idx * 9;
+kernel void branchCalculation(global int* Pl, global int* Ml, global bool* B, global int *pindex, global int *moves) {
+    const int idx = get_global_id(0);
+    const int k = idx * 9;
 
-  int board[9];
-  for (int i = 0; i < 9; i++) {
-    board[i] = Pl[k + i];
-  }
+    int board[9];
 
-  int generatedMoves[81];
-  int count = 0;
-
-  for (int i = 0; i < 9; i++) {
-    if (board[i] == 0) {
-      for (int j = 0; j < 9; j++) {
-        generatedMoves[count * 9 + j] = board[j]; 
-      }
-      generatedMoves[count * 9 + i] = *pindex;
-      count++;
+    for (int i = 0; i < 9; i++) {
+        board[i] = Pl[k + i];
     }
-  }
-  for (int i = 0; i < 9 * *moves; i++) {
-    Ml[idx * *moves * 9 + i] = generatedMoves[i];
-  }
+
+    for (int i = 0; i < *moves; i++) {
+        B[idx * *moves + i] = *moves == 1;
+    }
+
+    int generatedMoves[81];
+    int count = 0;
+
+    for (int i = 0; i < 9; i++) {
+        if (board[i] == 0) {
+            for (int j = 0; j < 9; j++) {
+                generatedMoves[count * 9 + j] = board[j];
+            }
+            generatedMoves[count * 9 + i] = *pindex;
+
+            for (int j = 0; j < 8; j++) {
+                __constant int* l = lines[j];
+                if (generatedMoves[count * 9 + l[0]] == *pindex && generatedMoves[count * 9 + l[1]] == *pindex &&
+                generatedMoves[count * 9 + l[2]] == *pindex) {
+                    B[idx * *moves + count] = true;
+                    break;
+                }
+            }
+            count++;
+        }
+    }
+
+    for (int i = 0; i < 9 * *moves; i++) {
+        Ml[idx * *moves * 9 + i] = generatedMoves[i];
+    }
 }

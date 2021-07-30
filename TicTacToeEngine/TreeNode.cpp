@@ -3,17 +3,40 @@
 #include <vector>
 #include <iostream>
 
+#define MAX 1000;
+#define MIN -1000;
 
-TreeNode::TreeNode() {};
-
-TreeNode::TreeNode(int* b) {
+TreeNode::TreeNode() {
     value = NULL;
-    board = b;
+    board = NULL;
     parent = NULL;
-    isLeaf = false;
+    isLeaf = true;
+    isMax = true;
 }
 
-int TreeNode::countNodesRec(TreeNode* root, int& count){
+TreeNode::TreeNode(int* b, bool i, bool m) {
+    board = b;
+    parent = NULL;
+    isMax = m;
+
+    if (i) {
+        isLeaf = true;
+        isBranch = false;
+    }
+    else {
+        isLeaf = false;
+        isBranch = true;
+    }
+
+    if (m) {
+        value = MIN;
+    }
+    else {
+        value = MAX;
+    }
+}
+
+int TreeNode::countNodesRec(TreeNode* root, int& count) {
     TreeNode* parent = root;
     TreeNode* child = NULL;
 
@@ -31,15 +54,16 @@ int TreeNode::countNodesRec(TreeNode* root, int& count){
     return count;
 }
 
-std::vector <TreeNode*> TreeNode::getBranches(int n) {
-    int num = childrenNumber();
+std::vector<TreeNode*> TreeNode::getBranches(int n, int d) {
+    std::vector<TreeNode*> selectedNodes;
+    this->getNodesAtDepth(d, 0, selectedNodes);
     std::vector<TreeNode*> branches;
     int counter = 0;
 
-    for (int i = 0; i < num; i++) {
-        TreeNode* child = this->getChild(i);
-        if (child->getIsLeaf()) {
-            branches.push_back(child); 
+    for (int i = 0; i < selectedNodes.size(); i++) {
+        TreeNode* node = selectedNodes[i];
+        if (node->getIsBranch()) {
+            branches.push_back(node);
             counter++;
         }
         if (counter == n) {
@@ -49,73 +73,83 @@ std::vector <TreeNode*> TreeNode::getBranches(int n) {
     return branches;
 }
 
-TreeNode* TreeNode::getLeaves(int n) {
-    int num = childrenNumber();
-    TreeNode* branches = new TreeNode[n];
+std::vector<TreeNode*> TreeNode::getLeaves(int n, int d) {
+    std::vector<TreeNode*> selectedNodes;
+    this->getNodesAtDepth(d, 0, selectedNodes);
+    std::vector<TreeNode*> leaves;
     int counter = 0;
 
-    for (int i = 0; i < num; i++) {
-        TreeNode child = *(this->getChild(i));
-        if (!child.getIsLeaf()) {
-            branches[counter] = child; 
+    for (int i = 0; i < selectedNodes.size(); i++) {
+        TreeNode* node = selectedNodes[i];
+        if (node->getIsLeaf()) {
+            leaves.push_back(node);
             counter++;
         }
         if (counter == n) {
             break;
         }
     }
-    return branches;
+    return leaves;
 }
 
-void TreeNode::setIsLeaf(bool leaf) {
-    isLeaf = leaf;
+void TreeNode::setIsLeaf(bool l) {
+    isLeaf = l;
 }
 
 bool TreeNode::getIsLeaf() {
     return isLeaf;
 }
 
-void TreeNode::appendChild(TreeNode* child){
+void TreeNode::setIsBranch(bool b) {
+    isBranch = b;
+}
+
+bool TreeNode::getIsBranch() {
+    return isBranch;
+}
+
+void TreeNode::appendChild(TreeNode* child) {
     child->setParent(this);
     children.push_back(child);
 }
 
-void TreeNode::setParent(TreeNode* theParent){
+void TreeNode::setParent(TreeNode* theParent) {
     parent = theParent;
 }
 
-void TreeNode::popBackChild(){
+void TreeNode::popBackChild() {
     children.pop_back();
 }
 
-void TreeNode::removeChild(int pos){
+void TreeNode::removeChild(TreeNode* child) {
     if (children.size() > 0) {
-        children.erase(children.begin() + pos);
+        int childIndex = std::find(children.begin(), children.end(), child) - children.begin();
+        children.erase(children.begin() + childIndex);
     }
     else {
         children.pop_back();
     }
 }
 
-bool TreeNode::hasChildren(){
+bool TreeNode::hasChildren() {
     if (children.size() > 0)
         return true;
     else
         return false;
 }
 
-bool TreeNode::hasParent(){
+bool TreeNode::hasParent() {
     if (parent != NULL)
         return true;
     else
         return false;
 }
 
-TreeNode* TreeNode::getParent(){
+TreeNode* TreeNode::getParent() {
     return parent;
 }
 
-TreeNode* TreeNode::getChild(int pos){
+TreeNode* TreeNode::getChild(int pos) {
     if (children.size() < pos)
         return NULL;
     else
@@ -126,11 +160,11 @@ std::vector<TreeNode*> TreeNode::getChilds() {
     return children;
 }
 
-int TreeNode::childrenNumber(){
+int TreeNode::childrenNumber() {
     return children.size();
 }
 
-int TreeNode::grandChildrenNum(){
+int TreeNode::grandChildrenNum() {
     int t = 0;
 
     if (children.size() < 1)
@@ -143,7 +177,7 @@ int TreeNode::grandChildrenNum(){
     return t;
 }
 
-int* TreeNode::getBoard(){
+int* TreeNode::getBoard() {
     return board;
 }
 
@@ -153,4 +187,20 @@ int TreeNode::getValue() {
 
 void TreeNode::setValue(int v) {
     value = v;
+}
+
+bool TreeNode::getIsMax() {
+    return isMax;
+}
+
+void TreeNode::getNodesAtDepth(int d, int c, std::vector<TreeNode*> &selectedNodes) {
+    if (d == c) {
+        selectedNodes.push_back(this);
+    }
+    else {
+        std::vector<TreeNode*> childs = this->getChilds();
+        for (int i = 0; i < childs.size(); i++) {
+            childs[i]->getNodesAtDepth(d, c + 1, selectedNodes);
+        }
+    }
 }

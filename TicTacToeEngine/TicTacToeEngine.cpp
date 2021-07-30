@@ -28,26 +28,26 @@ const int lines[8][3] = {
 
 const int scores[4] = {0, 1, 10, 100};
 
-const int MAX = 1000;
-const int MIN = -1000;
-
 int leafCalculationCPU(int* board, int pindex, int eindex) {
-	int V;
-	int accum = 0;
+	int V = 0;
 
 	for (int i = 0; i < 8; i++) {
 		const int* l = lines[i];
 		// Recorrer el tablero y asignar puntajes
 		int score = scores[(board[l[0]] == pindex) + (board[l[1]] == pindex) + (board[l[2]] == pindex)];
 		score -= scores[(board[l[0]] == eindex) + (board[l[1]] == eindex) + (board[l[2]] == eindex)];
-		accum += score; 
+		V += score; 
 	}
-	V = accum;
 	return V;
 }
 
-int* branchCalculationCPU(int* board, int pindex, int moves) {
+std::pair<int*, bool*> branchCalculationCPU(int* board, int pindex, int moves) {
 	int* Ml = new int[9 * moves];
+	bool* B = new bool[moves];
+
+	for (int i = 0; i < moves; i++) {
+		B[i] = moves == 1;
+	}
 
 	int count = 0;
     for (int i = 0; i < 9; i++) {
@@ -57,14 +57,22 @@ int* branchCalculationCPU(int* board, int pindex, int moves) {
 				Ml[count * 9 + j] = board[j];
 			}
 			Ml[count * 9 + i] = pindex;
+
+			for (int j = 0; j < 8; j++) {
+				const int* l = lines[j];
+				if (Ml[count * 9 + l[0]] == pindex && Ml[count * 9 + l[1]] == pindex && Ml[count * 9 + l[2]] == pindex) {
+					B[count] = true;
+					break;
+				}
+			}
 			count++;
       }
     }
-	return Ml;
+	return std::make_pair(Ml, B);
 }
 
 
-int* leafCalculationGPUCall(std::vector<TreeNode*> leaves) {
+int* leafCalculationGPUCall(std::vector<TreeNode*> leaves, int pindex, int eindex) {
 	// Call leafCalculationFunction on GPU with leaves
 	int plSize = leaves.size();
 
@@ -73,8 +81,6 @@ int* leafCalculationGPUCall(std::vector<TreeNode*> leaves) {
 
 	std::vector<int> Pl;  // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
 	int* V = new int[plSize];
-	int pindex = 2;
-	int eindex = 1;
 
 	for (int i = 0; i < plSize; ++i) {
 		int* board = leaves[i]->getBoard();
@@ -168,16 +174,15 @@ int* leafCalculationGPUCall(std::vector<TreeNode*> leaves) {
 	return V;
 }
 
-int* branchCalculationGPUCall(std::vector<TreeNode*> branches, int moves) {
+std::pair<int*, bool*> branchCalculationGPUCall(std::vector<TreeNode*> branches, int moves, int pindex) {
 	// Call leafCalculationFunction on GPU with leaves
 	int plSize = branches.size();
-
 	const int N_ELEMENTS = 1024 * 1024;
 	int platform_id = 0, device_id = 0;
 
 	std::vector<int> Pl;  // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
 	int* M = new int[plSize * 9 * moves];
-	int pindex = 2;
+	bool* B = new bool[plSize * moves];
 
 	for (int i = 0; i < plSize; ++i) {
 		int* board = branches[i]->getBoard();
@@ -185,7 +190,6 @@ int* branchCalculationGPUCall(std::vector<TreeNode*> branches, int moves) {
 			Pl.push_back(board[j]);
 		}
 	}
-
 	// Query for platforms
 	std::vector<cl::Platform> platforms;
 	cl::Platform::get(&platforms);
@@ -206,8 +210,9 @@ int* branchCalculationGPUCall(std::vector<TreeNode*> branches, int moves) {
 	// Create the memory buffers
 	cl::Buffer bufferPl = cl::Buffer(context, CL_MEM_READ_ONLY, plSize * sizeof(int) * 9);
 	cl::Buffer bufferPIndex = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(int));
-	cl::Buffer bufferMoves = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(int));
+	cl::Buffer bufferMoves = cl::Buffer(context, CL_MEM_READ_ONLY, sizeof(int)); // Estaba como Write Only
 	cl::Buffer bufferM = cl::Buffer(context, CL_MEM_WRITE_ONLY, plSize * sizeof(int) * 9 * moves);
+	cl::Buffer bufferB = cl::Buffer(context, CL_MEM_WRITE_ONLY, plSize * sizeof(bool) * moves);
 
 	// Copy the input data to the input buffers using the command queue.
 	queue.enqueueWriteBuffer(bufferPl, CL_FALSE, 0, plSize * sizeof(int) * 9, &Pl[0]);
@@ -256,8 +261,9 @@ int* branchCalculationGPUCall(std::vector<TreeNode*> branches, int moves) {
 	// Set the kernel arguments
 	lckernel.setArg(0, bufferPl);
 	lckernel.setArg(1, bufferM);
-	lckernel.setArg(2, bufferPIndex);
-	lckernel.setArg(3, bufferMoves);
+	lckernel.setArg(2, bufferB);
+	lckernel.setArg(3, bufferPIndex);
+	lckernel.setArg(4, bufferMoves);
 
 	// Execute the kernel
 	cl::NDRange global(plSize);
@@ -267,8 +273,68 @@ int* branchCalculationGPUCall(std::vector<TreeNode*> branches, int moves) {
 
 	// Copy the output data back to the host
 	queue.enqueueReadBuffer(bufferM, CL_TRUE, 0, plSize * sizeof(int) * 9 * moves, M);
+	queue.enqueueReadBuffer(bufferB, CL_TRUE, 0, plSize * sizeof(bool) * moves, B);
 
-	return M;
+	return std::make_pair(M, B);
+}
+
+void updateTree(std::vector<TreeNode*> evaluatedNodes, TreeNode** root, int* values, int* bestBoard) {
+	for (int i = 0; i < evaluatedNodes.size(); i++) {
+		int selectedValue = values[i];
+		TreeNode* selectedNode = evaluatedNodes[i];
+		TreeNode* parentNode = selectedNode->getParent();
+
+		// Updating parent nodes till root
+		while (parentNode != NULL) {
+			int parentBest = parentNode->getValue();
+			bool parentIsMax = parentNode->getIsMax();
+
+			if (parentIsMax) {
+				int best = std::max(parentBest, selectedValue);
+
+				if (best > parentBest) {
+					parentNode->setValue(best);
+
+					if (parentNode == *root) {
+						int* newBestBoard = selectedNode->getBoard();
+
+						for (int i = 0; i < 9; i++) {
+							bestBoard[i] = newBestBoard[i];
+						}
+					}
+				}
+			}
+			else {
+				int best = std::min(parentBest, selectedValue);
+
+				if (best < parentBest) {
+					parentNode->setValue(best);
+
+					if (parentNode == *root) {
+						int* newBestBoard = selectedNode->getBoard();
+
+						for (int i = 0; i < 9; i++) {
+							bestBoard[i] = newBestBoard[i];
+						}
+					}
+				}
+
+			}
+
+			// Prune selected node from parent if has no children left
+			if (!selectedNode->hasChildren()) {
+				parentNode->removeChild(selectedNode);
+			}
+			// Set next parent node
+			selectedNode = parentNode;
+			selectedValue = selectedNode->getValue();
+			parentNode = parentNode->getParent();
+		}
+
+		if (!(*root)->hasChildren()) {
+			*root = NULL;
+		}
+	}
 }
 
 // Algoritmo 2
@@ -277,190 +343,170 @@ int* gameTreeMax(TreeNode *P0, int pindex, int eindex, int moves) {
 	// Alpha-Beta Pruning
 	//int alpha = MIN;
 	//int beta = MAX;
-	int M_best[9];
 
 	// Setting P0 as the root of the game tree T
 	TreeNode *T = P0;
 	int depth = 0;
+	int* M_best = P0->getBoard();
 
 	int remLeaves = 0; // remaining leaves
 	int remBranches = 1; // remaining branches
 	int acumLeaves = 0;
 	int acumBranches = 0;
 
-	int Lmin = 3;
-	int Bmin = 3;
-	//int Lmax = 6;
-	//int Bmax = 6;
-
-	int n = 0;
-	int *board = P0->getBoard();
-
-	for (int i = 0; i < 9; i++) {
-		if (board[i] != 0) {
-			n++;
-		}
-	}
+	int Lmin = 5;
+	int Bmin = 5;
 
 	while (T != NULL) {
 		if (remLeaves > Lmin) {
-			std::vector<TreeNode*> leaves = T->getChilds(); // Get l leaves from tree T at depth
-			
+			std::vector<TreeNode*> leaves = T->getLeaves(100000, depth); // Get l leaves from tree T at depth
+
 			// Call leafCalculationFunction on GPU with leaves
-			int *V = leafCalculationGPUCall(leaves); // Get evaluatedValueList from GPU: V
+			int* V = leafCalculationGPUCall(leaves, pindex, eindex);
 
-			// Quizás aquí debería haber un for por cada hoja analizada
-			for (int i = 0; i < leaves.size(); i++) {
-				// Get value, parentNode, and depth
-				int v = V[i];
-				TreeNode* parentNode = leaves[i]->getParent();
-				int parentBest = parentNode->getValue();
+			updateTree(leaves, &T, V, M_best);
 
-				if (depth % 2 == 0) {
-					// Update parent as maximizing player
-					int best = std::max(parentBest, v);
-					parentNode->setValue(best);
-
-					//alpha = std::max(alpha, best);
-
-					// Alpha Beta Pruning
-					//if (beta <= alpha) {
-					//	break;
-					//}
-				} else {
-					// Update parent as minimizing player
-					int best = std::min(parentBest, v);
-					parentNode->setValue(best);
-
-					//beta = std::min(beta, best);
-
-					// Alpha Beta Pruning
-					//if (beta <= alpha) {
-					//	break;
-					//}
-				}
-
-				// If parent node is NULL, set M_best to movement
-				//if (parentNode == P0) {
-				//	int best = v;
-				//}
-				// Pruning
-				parentNode->removeChild(i);
-			}
+			remLeaves -= leaves.size();
 		}
 		else if (remLeaves > 0) {
-			TreeNode* leaf = T->getChild(0); // Get one leaf node from tree T
-			
-			// Call leafCalculationFunction on CPU
-			int v = leafCalculationCPU(leaf->getBoard(), 1, 0); // TODO: asignar pindex, eindex
+			std::vector<TreeNode*> leaf = T->getLeaves(1, depth); // Get one leaf node from tree T
 
-			// Update the tree T by the evaluated leaf node
-			TreeNode* parentNode = leaf->getParent();
+			leaf[0]->setIsLeaf(false);
 
-			if (depth % 2 == 0) {
-				// Maximizing player
-				int best = std::max(best, v);
-				parentNode->setValue(best);
-
-				//alpha = std::max(alpha, best);
-
-				// Alpha Beta Pruning
-				//if (beta <= alpha) {
-				//	break;
-				//}
-			} else {
-				// Minimizing player
-				int best = std::min(best, v);
-				parentNode->setValue(best);
-
-				//beta = std::min(beta, best);
-
-				// Alpha Beta Pruning
-				//if (beta <= alpha) {
-				//	break;
-				//}
-			}
-
-			//if (parentNode == P0) {
-			//	int best = v;
-			//}
-			// Pruning
-			parentNode->removeChild(0);
-		}
-
-		else if (remBranches > Bmin) {
-			int remMoves = moves - depth;
-			std::vector<TreeNode*> branches = T->getBranches(3);  // Get b branches from tree T
-			// Call branchCalculationFunction in GPU
-			int* childNodeList = branchCalculationGPUCall(branches, remMoves);
-			// Get childNodeList from the GPU
-
-			// Update T by generated child node c TODO: Revisar
-			for (int i = 0; i < branches.size(); i++) {
-				for (int j = 0; j < remMoves; j++) {
-					int board[9];
-					for (int k = 0; k < 9; k++) {
-						board[k] = childNodeList[(i + j) * 9 + k];
-					}
-					branches[i]->appendChild(new TreeNode(board));
+			if (leaf[0]->getIsLeaf()) {
+				for (int i = 0; i < 9; i++) {
 				}
 			}
+			
+			// Call leafCalculationFunction on CPU
+			int v = leafCalculationCPU(leaf[0]->getBoard(), pindex, eindex);
+
+			// Update the tree T by the evaluated leaf node
+			int V[1] = { v };
+
+			updateTree(leaf, &T, V, M_best);
+
+			remLeaves -= 1;
+		}
+		else if (remBranches > Bmin) {
+			int remMoves = moves - depth;
+			std::vector<TreeNode*> branches = T->getBranches(100000, depth);  // Get b branches from tree T
+
+			for (TreeNode* b : branches) {
+				b->setIsBranch(false);
+			}
+			
+			// Call branchCalculationFunction in GPU
+			std::pair<int*, bool*> childNodeList;
+
+			if (depth % 2 == 0) {
+				childNodeList = branchCalculationGPUCall(branches, remMoves, pindex);
+			}
+			else {
+				childNodeList = branchCalculationGPUCall(branches, remMoves, eindex);
+			}
+			
+			// Get childNodeList from the GPU
+			int* boardList = childNodeList.first;
+			bool* booleanList = childNodeList.second;
+
+			// Update T by generated child node c
+			for (int i = 0; i < branches.size(); i++) {
+				for (int j = 0; j < remMoves; j++) {
+					int* board = new int[9];
+
+					for (int k = 0; k < 9; k++) {
+						board[k] = boardList[(remMoves * i + j) * 9 + k];
+					}
+
+					bool isLeaf = booleanList[remMoves * i + j];
+
+					if (depth % 2 == 0) {
+						branches[i]->appendChild(new TreeNode(board, isLeaf, false));
+					}
+					else {
+						branches[i]->appendChild(new TreeNode(board, isLeaf, true));
+					}
+
+					if (isLeaf) {
+						acumLeaves += 1;
+					}
+					else {
+						acumBranches += 1;
+					}
+				}
+			}
+			remBranches -= branches.size();
 		}
 		else if (remBranches > 0) {
 			int remMoves = moves - depth;
-			std::vector<TreeNode*> branch = T->getBranches(1); // Get one leaf node from tree T
-			// Call branchCalculationFunction on CPU
-			int* newNodes = branchCalculationCPU(branch[1]->getBoard(), 1, remMoves);
-			// Update T by new child nodes from node
+			std::vector<TreeNode*> branch = T->getBranches(1, depth); // Get one branch node from tree T
 
-			// Update T by generated child node c TODO: Revisar
-			for (int j = 0; j < remMoves; j++) {
-				int board[9];
-				for (int k = 0; k < 9; k++) {
-					board[k] = newNodes[j * 9 + k];
-				}
-				branch[1]->appendChild(new TreeNode(board));
+			branch[0]->setIsBranch(false);
+
+			// Call branchCalculationFunction on CPU
+			std::pair<int*, bool*> newNodes;
+
+			if (depth % 2 == 0) {
+				newNodes = branchCalculationCPU(branch[0]->getBoard(), pindex, remMoves);
 			}
+			else {
+				newNodes = branchCalculationCPU(branch[0]->getBoard(), eindex, remMoves);
+			}
+
+			// Update T by new child nodes from node
+			int* boardList = newNodes.first;
+			bool* booleanList = newNodes.second;
+
+			// Update T by generated child node c
+			for (int j = 0; j < remMoves; j++) {
+				int* board = new int[9];
+
+				for (int k = 0; k < 9; k++) {
+					board[k] = boardList[j * 9 + k];
+				}
+
+				bool isLeaf = booleanList[j];
+
+				if (depth % 2 == 0) {
+					branch[0]->appendChild(new TreeNode(board, isLeaf, false));
+				}
+				else {
+					branch[0]->appendChild(new TreeNode(board, isLeaf, true));
+				}
+
+				if (isLeaf) {
+					acumLeaves += 1;
+				}
+				else {
+					acumBranches += 1;
+				}
+			}
+			remBranches -= 1;
 		}
-		// Actualizar profundidad
-		depth++;
-		remLeaves = acumBranches;
-		remBranches = acumBranches;
-		acumLeaves = 0;
-		acumBranches = 0;
+		else {
+			// Actualizar profundidad
+			depth++;
+			remLeaves = acumLeaves;
+			remBranches = acumBranches;
+			acumLeaves = 0;
+			acumBranches = 0;
+		}
 	}
 	return M_best;
 }
 
 int main() {
-	int board[9] = {0, 1, 2, 0, 2, 1, 0, 0, 0};
-	int board2[9] = { 1, 0, 0, 0, 2, 1, 0, 2, 0 };
-	int moves = 5;
-	TreeNode* test = new TreeNode(board);
-	TreeNode* test2 = new TreeNode(board2);
-	std::vector<TreeNode*> v;
-	v.push_back(test);
-	v.push_back(test2);
-	int* x = branchCalculationGPUCall(v, moves);
-	//for (int j = 0; j < moves * v.size(); j++) {
-	//	for (int i = 0; i < 9; i++) {
-	//		std::cout << x[j * 9 + i];
-	//	}
-	//	std::cout << "\n";
-	//}
+	int moves = 8;
+	int board[9] = { 0, 0, 0, 0, 1, 0, 0, 0, 0 };
+	TreeNode* test = new TreeNode(board, false, true);
+	int* testGTS = gameTreeMax(test, 2, 1, moves);
 
-	int* y = branchCalculationCPU(board, 1, moves);
-	//for (int j = 0; j < moves; j++) {
-	//	for (int i = 0; i < 9; i++) {
-	//		std::cout << y[9 * j + i];
-	//	}
-	//	std::cout << "\n";
-	//}
-	//int val = leafCalculationCPU(board, 1, 2);
-	//std::cout << val;
-	//std::cout << "\n";
-	//std::cout << x[1];
-
-	int* testGTS = gameTreeMax(test, 1, 2, 5);
+	//int* best = updateTree(eval, test, values);
+	std::cout << "\njugada: ";
+	for (int i = 0; i < 9; i++) {
+		std::cout << testGTS[i];
+	}
+	std::cout << "\ntest-end";
 	return 0;
 }

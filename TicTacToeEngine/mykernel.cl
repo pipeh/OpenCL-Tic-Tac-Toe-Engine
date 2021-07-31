@@ -11,6 +11,7 @@ __constant int lines[8][3] = {
         {2, 4, 6}
         };
 
+
 kernel void leafCalculation(global int* Pl, global int* V, global int *pindex, global int *eindex) {
 
     const int idx = get_global_id(0);

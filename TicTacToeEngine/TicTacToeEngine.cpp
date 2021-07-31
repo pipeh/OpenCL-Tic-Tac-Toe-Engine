@@ -79,7 +79,7 @@ int* leafCalculationGPUCall(std::vector<TreeNode*> leaves, int pindex, int einde
 	const int N_ELEMENTS = 1024 * 1024;
 	int platform_id = 0, device_id = 0;
 
-	std::vector<int> Pl;  // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
+	std::vector<int> Pl;
 	int* V = new int[plSize];
 
 	for (int i = 0; i < plSize; ++i) {
@@ -180,7 +180,7 @@ std::pair<int*, bool*> branchCalculationGPUCall(std::vector<TreeNode*> branches,
 	const int N_ELEMENTS = 1024 * 1024;
 	int platform_id = 0, device_id = 0;
 
-	std::vector<int> Pl;  // Or you can use simple dynamic arrays like: int* A = new int[N_ELEMENTS];
+	std::vector<int> Pl;
 	int* M = new int[plSize * 9 * moves];
 	bool* B = new bool[plSize * moves];
 
@@ -337,7 +337,6 @@ void updateTree(std::vector<TreeNode*> evaluatedNodes, TreeNode** root, int* val
 	}
 }
 
-// Algoritmo 2
 int* gameTreeMax(TreeNode *P0, int pindex, int eindex, int moves) {
 
 	// Alpha-Beta Pruning
@@ -485,7 +484,7 @@ int* gameTreeMax(TreeNode *P0, int pindex, int eindex, int moves) {
 			remBranches -= 1;
 		}
 		else {
-			// Actualizar profundidad
+			// Update depth
 			depth++;
 			remLeaves = acumLeaves;
 			remBranches = acumBranches;
@@ -496,17 +495,106 @@ int* gameTreeMax(TreeNode *P0, int pindex, int eindex, int moves) {
 	return M_best;
 }
 
-int main() {
-	int moves = 8;
-	int board[9] = { 0, 0, 0, 0, 1, 0, 0, 0, 0 };
-	TreeNode* test = new TreeNode(board, false, true);
-	int* testGTS = gameTreeMax(test, 2, 1, moves);
-
-	//int* best = updateTree(eval, test, values);
-	std::cout << "\njugada: ";
-	for (int i = 0; i < 9; i++) {
-		std::cout << testGTS[i];
+void printBoard(int *board) {
+	std::cout << "\nTablero: \n";
+	std::cout << "\n-------\n";
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 3; j++) {
+			int s = board[i * 3 + j];
+			if (s == 1) {
+				std::cout << "|X";
+			}
+			else if (s == 2) {
+				std::cout << "|O";
+			}
+			else {
+				std::cout << "| ";
+			}
+		}
+		std::cout << "|\n-------\n";
 	}
-	std::cout << "\ntest-end";
+}
+
+int hasWon(int *board) {
+	for (int i = 0; i < 8; i++) {
+		const int *l = lines[i];
+
+		if (board[l[0]] == board[l[1]] && board[l[1]] == board[l[2]]) {
+			return board[l[0]];
+		}
+	}
+
+	return 0;
+}
+
+void startGame() {
+	int moves = 9;
+	int* board = new int[9];
+	for (int i = 0; i < 9; i++) {
+		board[i] = 0;
+	}
+	int pindex;
+	int eindex;
+	int winner = 0;
+	
+	std::srand(std::time(0));
+	bool turn = std::rand() % 2;
+
+	std::cout << "Selecciona una opcion:\nX (1)\nO (2)\nOpcion: ";
+
+	int choice;
+	std::cin >> choice;
+
+	if (choice == 1) {
+		pindex = 1;
+		eindex = 2;
+	}
+	else {
+		pindex = 2;
+		eindex = 1;
+	}
+
+	while (moves > 0) {
+		printBoard(board);
+
+		if (turn) {
+			std::cout << "\nIngrese una jugada: ";
+			std::cin.clear();
+			std::cin.ignore(INT_MAX, '\n');
+			int m;
+			std::cin >> m;
+			board[m - 1] = pindex;
+		}
+		else {
+			TreeNode* root = new TreeNode(board, false, true);
+			board = gameTreeMax(root, eindex, pindex, moves);
+		}
+		moves--;
+		turn = !turn;
+
+		winner = hasWon(board);
+
+		if (winner) {
+			break;
+		}
+	}
+
+	printBoard(board);
+
+	if (winner) {
+		if (winner == pindex) {
+			std::cout << "\nHas ganado!\n";
+		}
+		else {
+			std::cout << "\nHas perdido!\n";
+		}
+	}
+	else {
+		std::cout << "\nEmpate!\n";
+	}
+}
+
+int main() {
+	startGame();
 	return 0;
 }

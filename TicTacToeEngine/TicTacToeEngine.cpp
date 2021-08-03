@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <stdlib.h>
+#include <chrono>
 #include "TreeNode.h"
 
 #define CL_HPP_ENABLE_EXCEPTIONS
@@ -14,6 +15,9 @@
 #else
 #include <CL/opencl.hpp>
 #endif
+
+#define MAX 1000;
+#define MIN -1000;
 
 const int lines[8][3] = {
 	{0, 1, 2},
@@ -72,12 +76,9 @@ std::pair<int*, bool*> branchCalculationCPU(int* board, int pindex, int moves) {
 }
 
 
-int* leafCalculationGPUCall(std::vector<TreeNode*> leaves, int pindex, int eindex) {
+int* leafCalculationGPUCall(std::vector<TreeNode*> leaves, int pindex, int eindex, cl::Program program, cl::CommandQueue queue, cl::Context context) {
 	// Call leafCalculationFunction on GPU with leaves
 	int plSize = leaves.size();
-
-	const int N_ELEMENTS = 1024 * 1024;
-	int platform_id = 0, device_id = 0;
 
 	std::vector<int> Pl;
 	int* V = new int[plSize];
@@ -88,23 +89,6 @@ int* leafCalculationGPUCall(std::vector<TreeNode*> leaves, int pindex, int einde
 			Pl.push_back(board[j]);
 		}
 	}
-
-	// Query for platforms
-	std::vector<cl::Platform> platforms;
-	cl::Platform::get(&platforms);
-
-	// Get a list of devices on this platform
-	std::vector<cl::Device> devices;
-
-	// Select the platform.
-	platforms[platform_id].getDevices(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_CPU, &devices);
-	
-	// Create a context
-	cl::Context context(devices);
-
-	// Create a command queue
-	// Select the device.
-	cl::CommandQueue queue = cl::CommandQueue(context, devices[device_id]);
 
 	// Create the memory buffers
 	cl::Buffer bufferPl = cl::Buffer(context, CL_MEM_READ_ONLY, plSize * sizeof(int) * 9);
@@ -117,42 +101,6 @@ int* leafCalculationGPUCall(std::vector<TreeNode*> leaves, int pindex, int einde
 	queue.enqueueWriteBuffer(bufferPIndex, CL_FALSE, 0, sizeof(int), &pindex);
 	queue.enqueueWriteBuffer(bufferEIndex, CL_FALSE, 0, sizeof(int), &eindex);
 
-	// Read the program source
-	std::ifstream sourceFile("mykernel.cl");
-	std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
-	cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()));
-
-	// Make program from the source code
-	cl::Program program = cl::Program(context, source);
-
-	// Build the program for the devices
-	try
-	{
-		program.build(devices);
-	}
-	catch (cl::Error& e)
-	{
-		if (e.err() == CL_BUILD_PROGRAM_FAILURE)
-		{
-			for (cl::Device dev : devices)
-			{
-				// Check the build status
-				cl_build_status status = program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(dev);
-				if (status != CL_BUILD_ERROR)
-					continue;
-
-				// Get the build log
-				std::string name = dev.getInfo<CL_DEVICE_NAME>();
-				std::string buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(dev);
-				std::cerr << "Build log for " << name << ":" << std::endl
-					<< buildlog << std::endl;
-			}
-		}
-		else {
-			throw e;
-		}
-	}
-
 	// Make kernel
 	cl::Kernel lckernel(program, "leafCalculation");
 
@@ -163,8 +111,8 @@ int* leafCalculationGPUCall(std::vector<TreeNode*> leaves, int pindex, int einde
 	lckernel.setArg(3, bufferEIndex);
 
 	// Execute the kernel
-	cl::NDRange global(plSize);
-	cl::NDRange local(1);
+	cl::NDRange global(131072);
+	cl::NDRange local(256);
 
 	queue.enqueueNDRangeKernel(lckernel, cl::NullRange, global, local);
 
@@ -174,11 +122,9 @@ int* leafCalculationGPUCall(std::vector<TreeNode*> leaves, int pindex, int einde
 	return V;
 }
 
-std::pair<int*, bool*> branchCalculationGPUCall(std::vector<TreeNode*> branches, int moves, int pindex) {
+std::pair<int*, bool*> branchCalculationGPUCall(std::vector<TreeNode*> branches, int moves, int pindex, cl::Program program, cl::CommandQueue queue, cl::Context context) {
 	// Call leafCalculationFunction on GPU with leaves
 	int plSize = branches.size();
-	const int N_ELEMENTS = 1024 * 1024;
-	int platform_id = 0, device_id = 0;
 
 	std::vector<int> Pl;
 	int* M = new int[plSize * 9 * moves];
@@ -190,22 +136,6 @@ std::pair<int*, bool*> branchCalculationGPUCall(std::vector<TreeNode*> branches,
 			Pl.push_back(board[j]);
 		}
 	}
-	// Query for platforms
-	std::vector<cl::Platform> platforms;
-	cl::Platform::get(&platforms);
-
-	// Get a list of devices on this platform
-	std::vector<cl::Device> devices;
-
-	// Select the platform.
-	platforms[platform_id].getDevices(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_CPU, &devices);
-
-	// Create a context
-	cl::Context context(devices);
-
-	// Create a command queue
-	// Select the device.
-	cl::CommandQueue queue = cl::CommandQueue(context, devices[device_id]);
 
 	// Create the memory buffers
 	cl::Buffer bufferPl = cl::Buffer(context, CL_MEM_READ_ONLY, plSize * sizeof(int) * 9);
@@ -219,42 +149,6 @@ std::pair<int*, bool*> branchCalculationGPUCall(std::vector<TreeNode*> branches,
 	queue.enqueueWriteBuffer(bufferPIndex, CL_FALSE, 0, sizeof(int), &pindex);
 	queue.enqueueWriteBuffer(bufferMoves, CL_FALSE, 0, sizeof(int), &moves);
 
-	// Read the program source
-	std::ifstream sourceFile("mykernel.cl");
-	std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
-	cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()));
-
-	// Make program from the source code
-	cl::Program program = cl::Program(context, source);
-
-	// Build the program for the devices
-	try
-	{
-		program.build(devices);
-	}
-	catch (cl::Error& e)
-	{
-		if (e.err() == CL_BUILD_PROGRAM_FAILURE)
-		{
-			for (cl::Device dev : devices)
-			{
-				// Check the build status
-				cl_build_status status = program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(dev);
-				if (status != CL_BUILD_ERROR)
-					continue;
-
-				// Get the build log
-				std::string name = dev.getInfo<CL_DEVICE_NAME>();
-				std::string buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(dev);
-				std::cerr << "Build log for " << name << ":" << std::endl
-					<< buildlog << std::endl;
-			}
-		}
-		else {
-			throw e;
-		}
-	}
-
 	// Make kernel
 	cl::Kernel lckernel(program, "branchCalculation");
 
@@ -266,8 +160,8 @@ std::pair<int*, bool*> branchCalculationGPUCall(std::vector<TreeNode*> branches,
 	lckernel.setArg(4, bufferMoves);
 
 	// Execute the kernel
-	cl::NDRange global(plSize);
-	cl::NDRange local(1);
+	cl::NDRange global(131072);
+	cl::NDRange local(256);
 
 	queue.enqueueNDRangeKernel(lckernel, cl::NullRange, global, local);
 
@@ -338,11 +232,6 @@ void updateTree(std::vector<TreeNode*> evaluatedNodes, TreeNode** root, int* val
 }
 
 int* gameTreeMax(TreeNode *P0, int pindex, int eindex, int moves) {
-
-	// Alpha-Beta Pruning
-	//int alpha = MIN;
-	//int beta = MAX;
-
 	// Setting P0 as the root of the game tree T
 	TreeNode *T = P0;
 	int depth = 0;
@@ -353,15 +242,47 @@ int* gameTreeMax(TreeNode *P0, int pindex, int eindex, int moves) {
 	int acumLeaves = 0;
 	int acumBranches = 0;
 
-	int Lmin = 5;
-	int Bmin = 5;
+	int Lmin = 50;
+	int Bmin = 50;
+	int l = 131072;
+	int b = 131072;
+	
+	// Initialize GPU Kernel
+	int platform_id = 0, device_id = 0;
+
+	// Query for platforms
+	std::vector<cl::Platform> platforms;
+	cl::Platform::get(&platforms);
+
+	// Get a list of devices on this platform
+	std::vector<cl::Device> devices;
+
+	// Select the platform.
+	platforms[platform_id].getDevices(CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_CPU, &devices);
+
+	// Create a context
+	cl::Context context(devices);
+
+	// Create a command queue
+	// Select the device.
+	cl::CommandQueue queue = cl::CommandQueue(context, devices[device_id]);
+
+	// Read the program source
+	std::ifstream sourceFile("mykernel.cl");
+	std::string sourceCode(std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
+	cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()));
+
+	// Make program from the source code
+	cl::Program program = cl::Program(context, source);
+
+	program.build(devices);
 
 	while (T != NULL) {
 		if (remLeaves > Lmin) {
-			std::vector<TreeNode*> leaves = T->getLeaves(100000, depth); // Get l leaves from tree T at depth
+			std::vector<TreeNode*> leaves = T->getLeaves(l, depth); // Get l leaves from tree T at depth
 
 			// Call leafCalculationFunction on GPU with leaves
-			int* V = leafCalculationGPUCall(leaves, pindex, eindex);
+			int* V = leafCalculationGPUCall(leaves, pindex, eindex, program, queue, context);
 
 			updateTree(leaves, &T, V, M_best);
 
@@ -389,7 +310,7 @@ int* gameTreeMax(TreeNode *P0, int pindex, int eindex, int moves) {
 		}
 		else if (remBranches > Bmin) {
 			int remMoves = moves - depth;
-			std::vector<TreeNode*> branches = T->getBranches(100000, depth);  // Get b branches from tree T
+			std::vector<TreeNode*> branches = T->getBranches(b, depth);  // Get b branches from tree T
 
 			for (TreeNode* b : branches) {
 				b->setIsBranch(false);
@@ -399,10 +320,10 @@ int* gameTreeMax(TreeNode *P0, int pindex, int eindex, int moves) {
 			std::pair<int*, bool*> childNodeList;
 
 			if (depth % 2 == 0) {
-				childNodeList = branchCalculationGPUCall(branches, remMoves, pindex);
+				childNodeList = branchCalculationGPUCall(branches, remMoves, pindex, program, queue, context);
 			}
 			else {
-				childNodeList = branchCalculationGPUCall(branches, remMoves, eindex);
+				childNodeList = branchCalculationGPUCall(branches, remMoves, eindex, program, queue, context);
 			}
 			
 			// Get childNodeList from the GPU
@@ -538,7 +459,7 @@ void startGame() {
 	int winner = 0;
 	
 	std::srand(std::time(0));
-	bool turn = std::rand() % 2;
+	bool turn = true;
 
 	std::cout << "Selecciona una opcion:\nX (1)\nO (2)\nOpcion: ";
 
@@ -591,6 +512,58 @@ void startGame() {
 	}
 	else {
 		std::cout << "\nEmpate!\n";
+	}
+}
+
+std::pair<int*, int> sequentialMinimax(TreeNode* node, int moves, int pindexEv, int eindexEv, int pindex, int eindex) {
+	int* board = node->getBoard();
+
+	if (node->getIsLeaf()) {
+		return std::make_pair(board, leafCalculationCPU(board, pindexEv, eindexEv));
+	}
+
+	std::pair<int*, bool*> newNodes = branchCalculationCPU(board, pindex, moves);
+
+	int* boards = newNodes.first;
+	bool* leaves = newNodes.second;
+
+	if (node->getIsMax()) {
+		int bestVal = MIN;
+		int* bestBoard = board;
+
+		for (int i = 0; i < moves; i++) {
+			int* newBoard = new int[9];
+			for (int j = 0; j < 9; j++) {
+				newBoard[j] = boards[i * 9 + j];
+			}
+			TreeNode* newNode = new TreeNode(newBoard, leaves[i], false);
+			std::pair<int*, int> p = sequentialMinimax(newNode, moves - 1, pindexEv, eindexEv, eindex, pindex);
+			
+			if (p.second > bestVal) {
+				bestBoard = newBoard;
+				bestVal = p.second;
+			}
+		}
+		return std::make_pair(bestBoard, bestVal);
+	}
+	else {
+		int bestVal = MAX;
+		int* bestBoard = board;
+
+		for (int i = 0; i < moves; i++) {
+			int* newBoard = new int[9];
+			for (int j = 0; j < 9; j++) {
+				newBoard[j] = boards[i * 9 + j];
+			}
+			TreeNode* newNode = new TreeNode(newBoard, leaves[i], true);
+			std::pair<int*, int> p = sequentialMinimax(newNode, moves - 1, pindexEv, eindexEv, eindex, pindex);
+			
+			if (p.second < bestVal) {
+				bestBoard = newBoard;
+				bestVal = p.second;
+			}
+		}
+		return std::make_pair(bestBoard, bestVal);
 	}
 }
 

@@ -36,24 +36,6 @@ TreeNode::TreeNode(int* b, bool i, bool m) {
     }
 }
 
-int TreeNode::countNodesRec(TreeNode* root, int& count) {
-    TreeNode* parent = root;
-    TreeNode* child = NULL;
-
-    for (int it = 0; it < parent->childrenNumber(); it++)
-    {
-        child = parent->getChild(it);
-        count++;
-        //std::cout<<child->getTextContent()<<" Number : "<<count<<std::endl;
-        if (child->childrenNumber() > 0)
-        {
-            countNodesRec(child, count);
-        }
-    }
-
-    return count;
-}
-
 std::vector<TreeNode*> TreeNode::getBranches(int n, int d) {
     std::vector<TreeNode*> selectedNodes;
     this->getNodesAtDepth(d, 0, selectedNodes);
@@ -162,19 +144,6 @@ std::vector<TreeNode*> TreeNode::getChilds() {
 
 int TreeNode::childrenNumber() {
     return children.size();
-}
-
-int TreeNode::grandChildrenNum() {
-    int t = 0;
-
-    if (children.size() < 1)
-    {
-        return 0;
-    }
-
-    countNodesRec(this, t);
-
-    return t;
 }
 
 int* TreeNode::getBoard() {

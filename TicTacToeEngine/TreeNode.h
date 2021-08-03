@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-class TreeNode{
+class TreeNode {
 private:
     int value;
 
@@ -20,8 +20,6 @@ private:
     bool isLeaf;
 
     bool isBranch;
-
-    int countNodesRec(TreeNode* root, int& count);
 
 public:
     TreeNode();
@@ -50,7 +48,6 @@ public:
     std::vector<TreeNode*> getLeaves(int n, int d);
 
     int childrenNumber();
-    int grandChildrenNum();
 
     int* getBoard();
 

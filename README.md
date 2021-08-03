@@ -1,2 +1,2 @@
-# OpenCL-Chess-Engine
-Chess Engine basado en implementación paralela del algoritmo GTS y desarrollado en OpenCL.
+# OpenCL Tic-Tac-Toe Engine
+Tic Tac Toe Engine desarrollado bajo implementación paralela del algoritmo GTS basado en nodos y desarrollado en OpenCL.
